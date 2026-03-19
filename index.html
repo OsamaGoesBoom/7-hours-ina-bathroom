@@ -2,189 +2,216 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>NEON BREAKER // HACKER MODE</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SURVIVE THE STALL | Five Nights at School</title>
     <style>
-        :root { --neon: #00f2ff; --pink: #ff00ff; --bg: #050508; }
-        body { background: var(--bg); color: white; margin: 0; font-family: 'Courier New', monospace; overflow: hidden; }
-        
-        #game-container { position: relative; width: 100vw; height: 100vh; }
-        canvas { display: block; }
-
-        /* Terminal Overlay */
-        #terminal {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 400px; background: rgba(0, 0, 0, 0.9); border: 2px solid var(--neon);
-            padding: 30px; display: none; text-align: center; z-index: 100;
-            box-shadow: 0 0 50px var(--neon);
+        body { 
+            background: #050505; 
+            color: #ff0000; 
+            font-family: 'Courier New', Courier, monospace; 
+            margin: 0; 
+            overflow: hidden; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh;
         }
-        #prompt { color: var(--pink); font-size: 1.5rem; margin-bottom: 10px; }
-        #typing-input { 
-            background: transparent; border: none; border-bottom: 2px solid var(--neon);
-            color: white; font-family: inherit; font-size: 1.5rem; text-align: center;
-            outline: none; width: 100%;
+        canvas { 
+            border: 2px solid #222; 
+            background: #000; 
+            box-shadow: 0 0 50px rgba(255, 0, 0, 0.1); 
+            cursor: none;
         }
-
-        /* Glitch UI */
-        .hud { position: absolute; top: 20px; width: 100%; display: flex; justify-content: space-around; pointer-events: none; }
-        .glitch-text { text-shadow: 2px 0 var(--pink), -2px 0 var(--neon); animation: glitch 1s infinite; }
-        @keyframes glitch { 0% { transform: translate(0); } 20% { transform: translate(-2px, 2px); } 40% { transform: translate(-2px, -2px); } 60% { transform: translate(2px, 2px); } 80% { transform: translate(2px, -2px); } 100% { transform: translate(0); } }
+        #hud {
+            position: absolute;
+            top: 10px;
+            width: 780px;
+            display: flex;
+            justify-content: space-between;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: bold;
+            text-shadow: 2px 2px #000;
+            pointer-events: none;
+        }
+        .warning { color: #fff; animation: blink 0.5s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } }
     </style>
 </head>
 <body>
 
-<div id="game-container">
-    <div class="hud">
-        <div class="glitch-text">SYSTEM_STATUS: <span id="mode">STABLE</span></div>
-        <div>SCORE: <span id="score">0</span></div>
+    <div id="hud">
+        <div>PERIOD: <span id="clock">08:00 AM</span></div>
+        <div id="timer-container">STRESS LEVEL: <span id="smoke-timer">180</span>s</div>
     </div>
 
-    <div id="terminal">
-        <div id="prompt">TYPE: OVERRIDE</div>
-        <input type="text" id="typing-input" autocomplete="off">
-        <div style="font-size: 10px; margin-top: 10px; color: #555;">[SECURE TUNNEL ACTIVE]</div>
-    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
 
-    <canvas id="canvas"></canvas>
-</div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const smokeElement = document.getElementById('smoke-timer');
+        const clockElement = document.getElementById('clock');
 
-<script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const term = document.getElementById('terminal');
-const input = document.getElementById('typing-input');
-const promptEl = document.getElementById('prompt');
+        // GAME CONSTANTS
+        let gameRunning = true;
+        let smokeTimer = 180;
+        let time = 0;
+        let smokeOpacity = 0;
+        let shake = 0;
+        let currentEvent = "KEEP QUIET.";
+        let eventTimer = 0;
+        let feetVisible = false;
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+        // VIGNETTE GRADIENT
+        const vignette = ctx.createRadialGradient(400, 300, 100, 400, 300, 500);
+        vignette.addColorStop(0, 'rgba(0,0,0,0)');
+        vignette.addColorStop(1, 'rgba(0,0,0,0.9)');
 
-let player = { x: canvas.width/2, y: canvas.height/2, size: 10, speed: 5 };
-let enemies = [];
-let isHacking = false;
-let score = 0;
-let currentCommand = "";
-let commands = ["OVERRIDE", "BYPASS", "DECRYPT", "TERMINATE", "PURGE"];
-let shockwave = { r: 0, active: false };
-
-function spawnEnemy() {
-    if (isHacking) return;
-    enemies.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() < 0.5 ? -20 : canvas.height + 20,
-        vx: (Math.random() - 0.5) * 4,
-        vy: (Math.random() - 0.5) * 4
-    });
-}
-
-// Every 5 seconds, force a hack
-setInterval(() => {
-    if (!isHacking) startHack();
-}, 5000);
-
-function startHack() {
-    isHacking = true;
-    term.style.display = 'block';
-    currentCommand = commands[Math.floor(Math.random() * commands.length)];
-    promptEl.innerText = "TYPE: " + currentCommand;
-    input.value = "";
-    input.focus();
-    document.getElementById('mode').innerText = "BREACH_DETECTED";
-}
-
-input.addEventListener('input', () => {
-    if (input.value.toUpperCase() === currentCommand) {
-        completeHack();
-    }
-});
-
-function completeHack() {
-    isHacking = false;
-    term.style.display = 'none';
-    shockwave.active = true;
-    shockwave.r = 0;
-    shockwave.x = player.x;
-    shockwave.y = player.y;
-    score += 500;
-    document.getElementById('mode').innerText = "STABLE";
-}
-
-function update() {
-    if (!isHacking) {
-        // Player follows mouse
-        canvas.onmousemove = (e) => {
-            player.x += (e.clientX - player.x) * 0.15;
-            player.y += (e.clientY - player.y) * 0.15;
-        };
-
-        enemies.forEach((en, i) => {
-            en.x += en.vx; en.y += en.vy;
-            // Wrap screen
-            if (en.x < 0) en.x = canvas.width;
-            if (en.x > canvas.width) en.x = 0;
-            if (en.y < 0) en.y = canvas.height;
-            if (en.y > canvas.height) en.y = 0;
-
-            // Collision
-            let d = Math.hypot(player.x - en.x, player.y - en.y);
-            if (d < 15) {
-                alert("SYSTEM FAILURE. Final Score: " + score);
-                location.reload();
+        // INPUT: PRESS 'F' TO SPRAY/SMOKE
+        window.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'f' && gameRunning) {
+                smokeTimer = 180;
+                smokeOpacity = 1.0;
+                shake = 15;
+                currentEvent = "CONCEALED...";
+                eventTimer = 100;
             }
         });
-    }
 
-    if (shockwave.active) {
-        shockwave.r += 20;
-        enemies = enemies.filter(en => {
-            let d = Math.hypot(shockwave.x - en.x, shockwave.y - en.y);
-            return d > shockwave.r;
-        });
-        if (shockwave.r > canvas.width) shockwave.active = false;
-    }
+        function update() {
+            if (!gameRunning) return;
 
-    if (Math.random() < 0.05) spawnEnemy();
-}
+            time++;
+            if (shake > 0) shake *= 0.9;
 
-function draw() {
-    // Background
-    ctx.fillStyle = isHacking ? "#110011" : "#050508";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Timer Logic
+            if (time % 60 === 0) {
+                smokeTimer--;
+                smokeElement.innerText = smokeTimer;
+                
+                // Clock Logic
+                let displayMin = (time / 60) % 60;
+                let displayHour = 8 + Math.floor((time / 3600));
+                clockElement.innerText = `${displayHour.toString().padStart(2, '0')}:${displayMin.toString().padStart(2, '0')} AM`;
 
-    // Shockwave effect
-    if (shockwave.active) {
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = 5;
-        ctx.beginPath();
-        ctx.arc(shockwave.x, shockwave.y, shockwave.r, 0, Math.PI * 2);
-        ctx.stroke();
-        
-        // Flash effect
-        ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
-        ctx.fillRect(0,0, canvas.width, canvas.height);
-    }
+                if (smokeTimer <= 0) gameOver("YOU FORGOT TO RESET. STAFF FOUND YOU.");
+                if (smokeTimer < 30) document.getElementById('timer-container').className = "warning";
+                else document.getElementById('timer-container').className = "";
 
-    // Player
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "white";
-    ctx.fillStyle = "white";
-    ctx.fillRect(player.x - 5, player.y - 5, 10, 10);
+                // Random Events
+                if (Math.random() > 0.92 && eventTimer <= 0) triggerEvent();
+            }
 
-    // Enemies
-    ctx.shadowColor = varColor('--pink');
-    ctx.fillStyle = varColor('--pink');
-    enemies.forEach(en => ctx.fillRect(en.x - 3, en.y - 3, 6, 6));
-    
-    ctx.shadowBlur = 0;
-}
+            if (eventTimer > 0) eventTimer--;
+            else {
+                currentEvent = "STAY HIDDEN.";
+                feetVisible = false;
+            }
 
-function varColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name); }
+            draw();
+            requestAnimationFrame(update);
+        }
 
-function loop() {
-    update();
-    draw();
-    requestAnimationFrame(loop);
-}
+        function triggerEvent() {
+            const events = [
+                "PRINCIPAL LURKING...",
+                "STUDENTS RUNNING...",
+                "JANITOR CLEANING...",
+                "SOMEONE IS PEAKING..."
+            ];
+            currentEvent = events[Math.floor(Math.random() * events.length)];
+            eventTimer = 200;
+            feetVisible = true;
+        }
 
-loop();
-</script>
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.save();
+            // Camera Shake
+            if (shake > 1) {
+                ctx.translate(Math.random() * shake - shake/2, Math.random() * shake - shake/2);
+            }
+
+            // 1. DRAW STALL BACKGROUND
+            ctx.fillStyle = "#1a1a1a";
+            ctx.fillRect(0, 0, 800, 600);
+
+            // 2. DRAW DOOR
+            ctx.fillStyle = "#2b1d1d";
+            ctx.fillRect(150, 50, 500, 480);
+            
+            // Door Shadows/Detail
+            ctx.strokeStyle = "#111";
+            ctx.lineWidth = 8;
+            ctx.strokeRect(150, 50, 500, 480);
+            
+            // Lock detail
+            ctx.fillStyle = "#444";
+            ctx.fillRect(600, 280, 30, 15);
+
+            // 3. UNDER THE DOOR (Floor)
+            ctx.fillStyle = "#0a0a0a";
+            ctx.fillRect(150, 530, 500, 40);
+
+            // 4. THE THREAT (Feet)
+            if (feetVisible && smokeOpacity < 0.3) {
+                ctx.fillStyle = "#000";
+                // Left Foot
+                ctx.fillRect(300, 535, 40, 20);
+                // Right Foot
+                ctx.fillRect(450, 535, 40, 20);
+            }
+
+            // 5. SMOKE EFFECT
+            if (smokeOpacity > 0) {
+                ctx.fillStyle = `rgba(200, 200, 220, ${smokeOpacity})`;
+                ctx.fillRect(0, 0, 800, 600);
+                smokeOpacity -= 0.003;
+                
+                // Particle fluff
+                for(let i=0; i<5; i++) {
+                    ctx.fillStyle = `rgba(255,255,255,${smokeOpacity/4})`;
+                    ctx.beginPath();
+                    ctx.arc(Math.random()*800, Math.random()*600, 100, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            }
+
+            // 6. UI OVERLAY
+            ctx.fillStyle = "#0f0";
+            ctx.font = "16px 'Courier New'";
+            ctx.textAlign = "center";
+            ctx.fillText(currentEvent, 400, 30);
+
+            // 7. POST-PROCESSING (Vignette & Static)
+            ctx.fillStyle = vignette;
+            ctx.fillRect(0, 0, 800, 600);
+
+            // Scanlines
+            ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+            for(let i=0; i<600; i+=4) ctx.fillRect(0, i, 800, 1);
+
+            ctx.restore();
+        }
+
+        function gameOver(reason) {
+            gameRunning = false;
+            ctx.fillStyle = "black";
+            ctx.fillRect(0, 0, 800, 600);
+            ctx.fillStyle = "red";
+            ctx.font = "50px Georgia";
+            ctx.textAlign = "center";
+            ctx.fillText("CAUGHT", 400, 280);
+            ctx.font = "15px Courier New";
+            ctx.fillStyle = "white";
+            ctx.fillText(reason, 400, 330);
+            ctx.fillText("PRESS F5 TO TRY THE NEXT DAY", 400, 450);
+        }
+
+        update();
+    </script>
 </body>
 </html>
