@@ -2,100 +2,126 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>SCHOOL DAY SURVIVAL: BATHROOM ESCAPE</title>
+    <title>FNAF: SCHOOL BATHROOM SURVIVAL</title>
     <style>
-        body { background: #000; color: #0f0; font-family: 'Courier New', Courier, monospace; margin: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
-        canvas { border: 2px solid #333; background: #050505; }
-        #ui { position: absolute; top: 10; width: 800px; display: flex; justify-content: space-between; padding: 20px; pointer-events: none; text-shadow: 2px 2px #000; }
-        .danger { color: #f00; animation: blink 0.5s infinite; }
-        @keyframes blink { 50% { opacity: 0; } }
+        body { background: #080808; color: #00ff00; font-family: 'Courier New', monospace; margin: 0; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        #game-container { position: relative; border: 4px solid #333; box-shadow: 0 0 20px #000; }
+        canvas { background: #111; display: block; }
+        #stats { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; pointer-events: none; font-weight: bold; font-size: 18px; text-shadow: 2px 2px #000; }
+        .alert { color: #ff0000; animation: flash 0.5s infinite; }
+        @keyframes flash { 50% { opacity: 0; } }
     </style>
 </head>
 <body>
 
-<div id="ui">
-    <div>LOCATION: HALLWAY/BATHROOM</div>
-    <div>STRESS LEVEL: <span id="timer">180</span>s</div>
+<div id="game-container">
+    <div id="stats">
+        <div>STATUS: <span id="status">HIDING</span></div>
+        <div>STRESS: <span id="timer">180</span>s</div>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
 </div>
 
-<canvas id="game" width="800" height="600"></canvas>
-
 <script>
-    const canvas = document.getElementById('game');
+    const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const timerEl = document.getElementById('timer');
+    const statusEl = document.getElementById('status');
 
-    // GAME SETTINGS
     let gameActive = true;
     let smokeTimer = 180;
     let smokeOpacity = 0;
-    
-    // PLAYER START
-    const player = { x: 150, y: 150, dir: 0, speed: 0, rotSpeed: 0 };
-    const keys = {};
+    let frame = 0;
 
-    // THE MAP (1 = Wall, 0 = Floor, 2 = Door)
+    // PLAYER OBJECT
+    const player = {
+        x: 100, y: 100,
+        radius: 12,
+        angle: 0,
+        speed: 3,
+        color: '#00ff00'
+    };
+
+    // MAP DATA (1 = Wall/Stall, 0 = Floor)
     const map = [
-        [1,1,1,1,1,1,1,1],
-        [1,0,0,0,0,0,0,1],
-        [1,0,1,1,0,1,0,1],
-        [1,0,0,0,0,1,0,1],
-        [1,1,2,1,1,1,0,1],
-        [1,0,0,0,0,0,0,1],
-        [1,0,1,0,1,0,0,1],
-        [1,1,1,1,1,1,1,1]
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,1,1,1,0,1,1,1,0,1,1,1,0,0,1],
+        [1,0,1,0,0,0,1,0,0,0,1,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,1,1,1,1,1,1,1,1,1,1,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
     ];
-    const tileSize = 100;
+    const tileSize = 50;
 
-    // NPCS (Students/Staff)
+    // NPC OBJECTS
     const npcs = [
-        { x: 400, y: 550, color: '#f0f', name: 'STUDENT', state: 'patrol' },
-        { x: 600, y: 150, color: '#f00', name: 'PRINCIPAL', state: 'hunting' }
+        { x: 400, y: 300, vx: 2, vy: 0, color: '#ff0000', name: 'PRINCIPAL', range: 150 },
+        { x: 600, y: 100, vx: 0, vy: 2, color: '#ff00ff', name: 'STUDENT', range: 100 }
     ];
 
-    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+    const keys = {};
+    window.onkeydown = (e) => keys[e.key.toLowerCase()] = true;
+    window.onkeyup = (e) => keys[e.key.toLowerCase()] = false;
+
+    function checkCollision(nx, ny) {
+        let gridX = Math.floor(nx / tileSize);
+        let gridY = Math.floor(ny / tileSize);
+        return map[gridY] && map[gridX] && map[gridY][gridX] === 1;
+    }
 
     function update() {
         if (!gameActive) return;
 
-        // 1. Stress Timer Logic
-        if (Math.floor(Date.now()/1000) % 1 === 0) {
-            if (!this.lastSec) this.lastSec = 0;
-            if (Date.now() - this.lastSec >= 1000) {
-                smokeTimer--;
-                timerEl.innerText = smokeTimer;
-                this.lastSec = Date.now();
-                if (smokeTimer <= 0) endGame("STRESS COLLAPSE: THE PRINCIPAL FOUND YOU.");
-            }
+        frame++;
+        
+        // 1. Stress Timer (Lose if 0)
+        if (frame % 60 === 0) {
+            smokeTimer--;
+            timerEl.innerText = smokeTimer;
+            if (smokeTimer <= 30) timerEl.classList.add('alert');
+            else timerEl.classList.remove('alert');
+            if (smokeTimer <= 0) gameOver("STRESS LEVEL CRITICAL - YOU PANICKED!");
         }
 
-        // 2. Movement
-        if (keys['w']) { player.x += Math.cos(player.dir) * 3; player.y += Math.sin(player.dir) * 3; }
-        if (keys['s']) { player.x -= Math.cos(player.dir) * 3; player.y -= Math.sin(player.dir) * 3; }
-        if (keys['a']) player.dir -= 0.05;
-        if (keys['d']) player.dir += 0.05;
+        // 2. Player Movement
+        let dx = 0, dy = 0;
+        if (keys['w']) dy -= player.speed;
+        if (keys['s']) dy += player.speed;
+        if (keys['a']) dx -= player.speed;
+        if (keys['d']) dx += player.speed;
 
-        // 3. Smoke Mechanic
+        if (!checkCollision(player.x + dx, player.y)) player.x += dx;
+        if (!checkCollision(player.x, player.y + dy)) player.y += dy;
+
+        // 3. F Key Smoke Mechanic
         if (keys['f']) {
             smokeTimer = 180;
             smokeOpacity = 1.0;
+            statusEl.innerText = "CONCEALED";
         }
-        if (smokeOpacity > 0) smokeOpacity -= 0.005;
+        if (smokeOpacity > 0) {
+            smokeOpacity -= 0.005;
+        } else {
+            statusEl.innerText = "EXPOSED";
+        }
 
-        // 4. NPC AI & Collision
+        // 4. NPC AI
         npcs.forEach(npc => {
-            let dx = player.x - npc.x;
-            let dy = player.y - npc.y;
-            let dist = Math.sqrt(dx*dx + dy*dy);
-            
-            // If NPC sees you and no smoke is active
-            if (dist < 60 && smokeOpacity < 0.4) {
-                endGame(`CAUGHT BY ${npc.name}`);
+            // Patrol
+            if (checkCollision(npc.x + npc.vx, npc.y + npc.vy)) {
+                npc.vx *= -1;
+                npc.vy *= -1;
             }
+            npc.x += npc.vx;
+            npc.y += npc.vy;
 
-            // Simple wandering
-            npc.x += Math.sin(Date.now()/1000) * 2;
+            // Catch Logic (Only if no smoke)
+            let dist = Math.hypot(player.x - npc.x, player.y - npc.y);
+            if (dist < 30 && smokeOpacity < 0.3) {
+                gameOver(`CAUGHT BY ${npc.name}!`);
+            }
         });
 
         draw();
@@ -103,69 +129,68 @@
     }
 
     function draw() {
-        // Clear Screen
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0,0,800,600);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw 2D Top-Down View (Mini-map style for technical clarity)
-        for(let r=0; r<map.length; r++) {
-            for(let c=0; c<map[r].length; c++) {
-                if(map[r][c] === 1) ctx.fillStyle = "#333";
-                else if(map[r][c] === 2) ctx.fillStyle = "#422";
-                else ctx.fillStyle = "#111";
-                ctx.fillRect(c*tileSize, r*tileSize, tileSize-2, tileSize-2);
+        // Draw Walls
+        for (let y = 0; y < map.length; y++) {
+            for (let x = 0; x < map[y].length; x++) {
+                if (map[y][x] === 1) {
+                    ctx.fillStyle = '#222';
+                    ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    ctx.strokeStyle = '#444';
+                    ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                }
             }
         }
 
         // Draw Player
-        ctx.save();
-        ctx.translate(player.x, player.y);
-        ctx.rotate(player.dir);
-        ctx.fillStyle = "#0f0";
-        ctx.fillRect(-10, -10, 20, 20); // Player Body
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(10, -2, 10, 4); // Direction indicator
-        ctx.restore();
+        ctx.fillStyle = player.color;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+        ctx.fill();
+        // Eye (to see direction)
+        ctx.fillStyle = 'white';
+        ctx.fillRect(player.x + 5, player.y - 2, 4, 4);
 
         // Draw NPCs
         npcs.forEach(npc => {
             ctx.fillStyle = npc.color;
             ctx.beginPath();
-            ctx.arc(npc.x, npc.y, 15, 0, Math.PI*2);
+            ctx.arc(npc.x, npc.y, player.radius, 0, Math.PI * 2);
             ctx.fill();
-            ctx.fillStyle = "#fff";
-            ctx.font = "10px Arial";
-            ctx.fillText(npc.name, npc.x - 20, npc.y - 20);
+            // Glow effect
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = npc.color;
         });
+        ctx.shadowBlur = 0;
 
-        // DRAW SMOKE OVERLAY
+        // Smoke Visual Overlay
         if (smokeOpacity > 0) {
-            ctx.fillStyle = `rgba(200, 200, 200, ${smokeOpacity})`;
-            ctx.fillRect(0,0,800,600);
-            for(let i=0; i<20; i++) {
-                ctx.fillStyle = `rgba(255,255,255,${smokeOpacity/2})`;
+            ctx.fillStyle = `rgba(255, 255, 255, ${smokeOpacity})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Smoke particles
+            for(let i=0; i<15; i++) {
+                ctx.fillStyle = `rgba(200, 200, 200, ${smokeOpacity/2})`;
                 ctx.beginPath();
-                ctx.arc(Math.random()*800, Math.random()*600, 80, 0, Math.PI*2);
+                ctx.arc(Math.random()*800, Math.random()*600, 60, 0, Math.PI*2);
                 ctx.fill();
             }
         }
-
-        // CRT Static effect
-        ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.05})`;
-        ctx.fillRect(0,0,800,600);
     }
 
-    function endGame(msg) {
+    function gameOver(msg) {
         gameActive = false;
-        ctx.fillStyle = "rgba(0,0,0,0.8)";
+        ctx.fillStyle = "rgba(0,0,0,0.85)";
         ctx.fillRect(0,0,800,600);
         ctx.fillStyle = "red";
-        ctx.font = "30px Courier New";
+        ctx.font = "bold 40px Courier New";
         ctx.textAlign = "center";
-        ctx.fillText("GAME OVER", 400, 280);
+        ctx.fillText("SCHOOL DAY OVER", 400, 280);
         ctx.fillStyle = "white";
-        ctx.font = "18px Courier New";
-        ctx.fillText(msg, 400, 320);
+        ctx.font = "20px Courier New";
+        ctx.fillText(msg, 400, 330);
+        ctx.fillText("PRESS F5 TO RESTART", 400, 400);
     }
 
     update();
