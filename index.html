@@ -2,216 +2,173 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SURVIVE THE STALL | Five Nights at School</title>
+    <title>SCHOOL DAY SURVIVAL: BATHROOM ESCAPE</title>
     <style>
-        body { 
-            background: #050505; 
-            color: #ff0000; 
-            font-family: 'Courier New', Courier, monospace; 
-            margin: 0; 
-            overflow: hidden; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center; 
-            height: 100vh;
-        }
-        canvas { 
-            border: 2px solid #222; 
-            background: #000; 
-            box-shadow: 0 0 50px rgba(255, 0, 0, 0.1); 
-            cursor: none;
-        }
-        #hud {
-            position: absolute;
-            top: 10px;
-            width: 780px;
-            display: flex;
-            justify-content: space-between;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            font-weight: bold;
-            text-shadow: 2px 2px #000;
-            pointer-events: none;
-        }
-        .warning { color: #fff; animation: blink 0.5s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } }
+        body { background: #000; color: #0f0; font-family: 'Courier New', Courier, monospace; margin: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        canvas { border: 2px solid #333; background: #050505; }
+        #ui { position: absolute; top: 10; width: 800px; display: flex; justify-content: space-between; padding: 20px; pointer-events: none; text-shadow: 2px 2px #000; }
+        .danger { color: #f00; animation: blink 0.5s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
     </style>
 </head>
 <body>
 
-    <div id="hud">
-        <div>PERIOD: <span id="clock">08:00 AM</span></div>
-        <div id="timer-container">STRESS LEVEL: <span id="smoke-timer">180</span>s</div>
-    </div>
+<div id="ui">
+    <div>LOCATION: HALLWAY/BATHROOM</div>
+    <div>STRESS LEVEL: <span id="timer">180</span>s</div>
+</div>
 
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
+<canvas id="game" width="800" height="600"></canvas>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const smokeElement = document.getElementById('smoke-timer');
-        const clockElement = document.getElementById('clock');
+<script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const timerEl = document.getElementById('timer');
 
-        // GAME CONSTANTS
-        let gameRunning = true;
-        let smokeTimer = 180;
-        let time = 0;
-        let smokeOpacity = 0;
-        let shake = 0;
-        let currentEvent = "KEEP QUIET.";
-        let eventTimer = 0;
-        let feetVisible = false;
+    // GAME SETTINGS
+    let gameActive = true;
+    let smokeTimer = 180;
+    let smokeOpacity = 0;
+    
+    // PLAYER START
+    const player = { x: 150, y: 150, dir: 0, speed: 0, rotSpeed: 0 };
+    const keys = {};
 
-        // VIGNETTE GRADIENT
-        const vignette = ctx.createRadialGradient(400, 300, 100, 400, 300, 500);
-        vignette.addColorStop(0, 'rgba(0,0,0,0)');
-        vignette.addColorStop(1, 'rgba(0,0,0,0.9)');
+    // THE MAP (1 = Wall, 0 = Floor, 2 = Door)
+    const map = [
+        [1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,1],
+        [1,0,1,1,0,1,0,1],
+        [1,0,0,0,0,1,0,1],
+        [1,1,2,1,1,1,0,1],
+        [1,0,0,0,0,0,0,1],
+        [1,0,1,0,1,0,0,1],
+        [1,1,1,1,1,1,1,1]
+    ];
+    const tileSize = 100;
 
-        // INPUT: PRESS 'F' TO SPRAY/SMOKE
-        window.addEventListener('keydown', (e) => {
-            if (e.key.toLowerCase() === 'f' && gameRunning) {
-                smokeTimer = 180;
-                smokeOpacity = 1.0;
-                shake = 15;
-                currentEvent = "CONCEALED...";
-                eventTimer = 100;
+    // NPCS (Students/Staff)
+    const npcs = [
+        { x: 400, y: 550, color: '#f0f', name: 'STUDENT', state: 'patrol' },
+        { x: 600, y: 150, color: '#f00', name: 'PRINCIPAL', state: 'hunting' }
+    ];
+
+    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+    function update() {
+        if (!gameActive) return;
+
+        // 1. Stress Timer Logic
+        if (Math.floor(Date.now()/1000) % 1 === 0) {
+            if (!this.lastSec) this.lastSec = 0;
+            if (Date.now() - this.lastSec >= 1000) {
+                smokeTimer--;
+                timerEl.innerText = smokeTimer;
+                this.lastSec = Date.now();
+                if (smokeTimer <= 0) endGame("STRESS COLLAPSE: THE PRINCIPAL FOUND YOU.");
             }
+        }
+
+        // 2. Movement
+        if (keys['w']) { player.x += Math.cos(player.dir) * 3; player.y += Math.sin(player.dir) * 3; }
+        if (keys['s']) { player.x -= Math.cos(player.dir) * 3; player.y -= Math.sin(player.dir) * 3; }
+        if (keys['a']) player.dir -= 0.05;
+        if (keys['d']) player.dir += 0.05;
+
+        // 3. Smoke Mechanic
+        if (keys['f']) {
+            smokeTimer = 180;
+            smokeOpacity = 1.0;
+        }
+        if (smokeOpacity > 0) smokeOpacity -= 0.005;
+
+        // 4. NPC AI & Collision
+        npcs.forEach(npc => {
+            let dx = player.x - npc.x;
+            let dy = player.y - npc.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            
+            // If NPC sees you and no smoke is active
+            if (dist < 60 && smokeOpacity < 0.4) {
+                endGame(`CAUGHT BY ${npc.name}`);
+            }
+
+            // Simple wandering
+            npc.x += Math.sin(Date.now()/1000) * 2;
         });
 
-        function update() {
-            if (!gameRunning) return;
+        draw();
+        requestAnimationFrame(update);
+    }
 
-            time++;
-            if (shake > 0) shake *= 0.9;
+    function draw() {
+        // Clear Screen
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0,0,800,600);
 
-            // Timer Logic
-            if (time % 60 === 0) {
-                smokeTimer--;
-                smokeElement.innerText = smokeTimer;
-                
-                // Clock Logic
-                let displayMin = (time / 60) % 60;
-                let displayHour = 8 + Math.floor((time / 3600));
-                clockElement.innerText = `${displayHour.toString().padStart(2, '0')}:${displayMin.toString().padStart(2, '0')} AM`;
-
-                if (smokeTimer <= 0) gameOver("YOU FORGOT TO RESET. STAFF FOUND YOU.");
-                if (smokeTimer < 30) document.getElementById('timer-container').className = "warning";
-                else document.getElementById('timer-container').className = "";
-
-                // Random Events
-                if (Math.random() > 0.92 && eventTimer <= 0) triggerEvent();
+        // Draw 2D Top-Down View (Mini-map style for technical clarity)
+        for(let r=0; r<map.length; r++) {
+            for(let c=0; c<map[r].length; c++) {
+                if(map[r][c] === 1) ctx.fillStyle = "#333";
+                else if(map[r][c] === 2) ctx.fillStyle = "#422";
+                else ctx.fillStyle = "#111";
+                ctx.fillRect(c*tileSize, r*tileSize, tileSize-2, tileSize-2);
             }
-
-            if (eventTimer > 0) eventTimer--;
-            else {
-                currentEvent = "STAY HIDDEN.";
-                feetVisible = false;
-            }
-
-            draw();
-            requestAnimationFrame(update);
         }
 
-        function triggerEvent() {
-            const events = [
-                "PRINCIPAL LURKING...",
-                "STUDENTS RUNNING...",
-                "JANITOR CLEANING...",
-                "SOMEONE IS PEAKING..."
-            ];
-            currentEvent = events[Math.floor(Math.random() * events.length)];
-            eventTimer = 200;
-            feetVisible = true;
+        // Draw Player
+        ctx.save();
+        ctx.translate(player.x, player.y);
+        ctx.rotate(player.dir);
+        ctx.fillStyle = "#0f0";
+        ctx.fillRect(-10, -10, 20, 20); // Player Body
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(10, -2, 10, 4); // Direction indicator
+        ctx.restore();
+
+        // Draw NPCs
+        npcs.forEach(npc => {
+            ctx.fillStyle = npc.color;
+            ctx.beginPath();
+            ctx.arc(npc.x, npc.y, 15, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = "#fff";
+            ctx.font = "10px Arial";
+            ctx.fillText(npc.name, npc.x - 20, npc.y - 20);
+        });
+
+        // DRAW SMOKE OVERLAY
+        if (smokeOpacity > 0) {
+            ctx.fillStyle = `rgba(200, 200, 200, ${smokeOpacity})`;
+            ctx.fillRect(0,0,800,600);
+            for(let i=0; i<20; i++) {
+                ctx.fillStyle = `rgba(255,255,255,${smokeOpacity/2})`;
+                ctx.beginPath();
+                ctx.arc(Math.random()*800, Math.random()*600, 80, 0, Math.PI*2);
+                ctx.fill();
+            }
         }
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.save();
-            // Camera Shake
-            if (shake > 1) {
-                ctx.translate(Math.random() * shake - shake/2, Math.random() * shake - shake/2);
-            }
+        // CRT Static effect
+        ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.05})`;
+        ctx.fillRect(0,0,800,600);
+    }
 
-            // 1. DRAW STALL BACKGROUND
-            ctx.fillStyle = "#1a1a1a";
-            ctx.fillRect(0, 0, 800, 600);
+    function endGame(msg) {
+        gameActive = false;
+        ctx.fillStyle = "rgba(0,0,0,0.8)";
+        ctx.fillRect(0,0,800,600);
+        ctx.fillStyle = "red";
+        ctx.font = "30px Courier New";
+        ctx.textAlign = "center";
+        ctx.fillText("GAME OVER", 400, 280);
+        ctx.fillStyle = "white";
+        ctx.font = "18px Courier New";
+        ctx.fillText(msg, 400, 320);
+    }
 
-            // 2. DRAW DOOR
-            ctx.fillStyle = "#2b1d1d";
-            ctx.fillRect(150, 50, 500, 480);
-            
-            // Door Shadows/Detail
-            ctx.strokeStyle = "#111";
-            ctx.lineWidth = 8;
-            ctx.strokeRect(150, 50, 500, 480);
-            
-            // Lock detail
-            ctx.fillStyle = "#444";
-            ctx.fillRect(600, 280, 30, 15);
-
-            // 3. UNDER THE DOOR (Floor)
-            ctx.fillStyle = "#0a0a0a";
-            ctx.fillRect(150, 530, 500, 40);
-
-            // 4. THE THREAT (Feet)
-            if (feetVisible && smokeOpacity < 0.3) {
-                ctx.fillStyle = "#000";
-                // Left Foot
-                ctx.fillRect(300, 535, 40, 20);
-                // Right Foot
-                ctx.fillRect(450, 535, 40, 20);
-            }
-
-            // 5. SMOKE EFFECT
-            if (smokeOpacity > 0) {
-                ctx.fillStyle = `rgba(200, 200, 220, ${smokeOpacity})`;
-                ctx.fillRect(0, 0, 800, 600);
-                smokeOpacity -= 0.003;
-                
-                // Particle fluff
-                for(let i=0; i<5; i++) {
-                    ctx.fillStyle = `rgba(255,255,255,${smokeOpacity/4})`;
-                    ctx.beginPath();
-                    ctx.arc(Math.random()*800, Math.random()*600, 100, 0, Math.PI*2);
-                    ctx.fill();
-                }
-            }
-
-            // 6. UI OVERLAY
-            ctx.fillStyle = "#0f0";
-            ctx.font = "16px 'Courier New'";
-            ctx.textAlign = "center";
-            ctx.fillText(currentEvent, 400, 30);
-
-            // 7. POST-PROCESSING (Vignette & Static)
-            ctx.fillStyle = vignette;
-            ctx.fillRect(0, 0, 800, 600);
-
-            // Scanlines
-            ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
-            for(let i=0; i<600; i+=4) ctx.fillRect(0, i, 800, 1);
-
-            ctx.restore();
-        }
-
-        function gameOver(reason) {
-            gameRunning = false;
-            ctx.fillStyle = "black";
-            ctx.fillRect(0, 0, 800, 600);
-            ctx.fillStyle = "red";
-            ctx.font = "50px Georgia";
-            ctx.textAlign = "center";
-            ctx.fillText("CAUGHT", 400, 280);
-            ctx.font = "15px Courier New";
-            ctx.fillStyle = "white";
-            ctx.fillText(reason, 400, 330);
-            ctx.fillText("PRESS F5 TO TRY THE NEXT DAY", 400, 450);
-        }
-
-        update();
-    </script>
+    update();
+</script>
 </body>
 </html>
